@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>停车券自动扣费工具</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>停车券自动扣费工具</h1>
+        <p id="subTitle">前台 + 后台完整骨架</p>
+      </div>
+      <button id="openConfigBtn" class="ghost">接入配置</button>
+    </header>
+
+    <main class="grid">
+      <section class="card stats-card">
+        <h2>本月概览</h2>
+        <div class="stats" id="stats"></div>
+      </section>
+
+      <section class="card pay-card">
+        <h2>扣费</h2>
+        <div class="quick-buttons">
+          <button data-amount="5">5</button>
+          <button data-amount="10">10</button>
+          <button data-amount="15">15</button>
+          <button data-amount="20">20</button>
+          <button data-amount="25">25</button>
+        </div>
+        <div class="input-row">
+          <input id="amountInput" type="number" min="5" step="5" placeholder="输入金额（5元倍数）" />
+          <button id="previewBtn">生成方案</button>
+        </div>
+        <div id="previewBox" class="preview-box hidden"></div>
+      </section>
+
+      <section class="card accounts-card">
+        <div class="section-header">
+          <h2>账号池</h2>
+          <button id="addAccountBtn">新增账号</button>
+        </div>
+        <div id="accountsList" class="list"></div>
+      </section>
+
+      <section class="card tasks-card">
+        <div class="section-header">
+          <h2>任务记录</h2>
+          <div class="row-gap">
+            <button id="refreshTasksBtn" class="ghost">刷新</button>
+            <button id="resetMonthBtn" class="ghost danger">月度重置</button>
+          </div>
+        </div>
+        <div id="tasksList" class="list"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="configModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="section-header"><h3>接入配置</h3><button class="ghost" data-close="#configModal">关闭</button></div>
+      <label>目标链接
+        <input id="targetUrlInput" type="text" />
+      </label>
+      <label>执行模式
+        <select id="executionModeSelect">
+          <option value="mock">mock（可直接测试）</option>
+          <option value="approved_integration_only">预留接入（不执行）</option>
+        </select>
+      </label>
+      <label class="checkbox-row">
+        <input id="requireConfirmInput" type="checkbox" checked />
+        <span>执行前必须确认</span>
+      </label>
+      <div class="actions">
+        <button id="saveConfigBtn">保存配置</button>
+      </div>
+      <p class="hint">说明：真实第三方执行器未在本版本中启用；这版提供完整前后台结构、任务流和适配器接口。</p>
+    </div>
+  </div>
+
+  <div id="accountModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="section-header"><h3 id="accountModalTitle">新增账号</h3><button class="ghost" data-close="#accountModal">关闭</button></div>
+      <input type="hidden" id="accountIdInput" />
+      <label>业主备注名
+        <input id="ownerNameInput" type="text" />
+      </label>
+      <label>登录账号
+        <input id="loginNameInput" type="text" />
+      </label>
+      <label>登录密码
+        <input id="passwordInput" type="text" />
+      </label>
+      <label>本月总券数
+        <input id="monthQuotaInput" type="number" min="0" step="1" value="30" />
+      </label>
+      <label>本月剩余券数
+        <input id="remainCountInput" type="number" min="0" step="1" value="30" />
+      </label>
+      <label>状态
+        <select id="statusInput">
+          <option value="normal">正常</option>
+          <option value="abnormal">异常</option>
+          <option value="disabled">停用</option>
+        </select>
+      </label>
+      <label>备注
+        <input id="noteInput" type="text" />
+      </label>
+      <div class="actions">
+        <button id="saveAccountBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
