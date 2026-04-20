@@ -1,123 +1,801 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>停车券自动扣费工具</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>停车券助手</title>
+  <style>
+    :root{
+      --bg:#f5f7fb;
+      --card:#ffffff;
+      --text:#111827;
+      --muted:#6b7280;
+      --line:#e5e7eb;
+      --primary:#2563eb;
+      --green:#16a34a;
+      --red:#dc2626;
+      --orange:#ea580c;
+      --shadow:0 8px 24px rgba(15,23,42,.06);
+      --radius:18px;
+      --safe-top: env(safe-area-inset-top);
+      --safe-bottom: env(safe-area-inset-bottom);
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+    body{padding-top:calc(12px + var(--safe-top));padding-bottom:calc(84px + var(--safe-bottom));}
+    .app{max-width:720px;margin:0 auto;padding:0 14px}
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;margin:6px 0 14px}
+    .title{font-size:26px;font-weight:800;letter-spacing:.5px}
+    .sub{font-size:12px;color:var(--muted);margin-top:4px}
+    .pill{font-size:12px;padding:8px 10px;border-radius:999px;background:#eef2ff;color:#3730a3;white-space:nowrap}
+    .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:14px;border:1px solid rgba(229,231,235,.6)}
+    .card h3{margin:0 0 12px;font-size:18px}
+    .grid{display:grid;gap:12px}
+    .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .stat{padding:14px;border-radius:16px;background:#f8fafc;border:1px solid var(--line)}
+    .stat .label{font-size:12px;color:var(--muted);margin-bottom:8px}
+    .stat .value{font-size:24px;font-weight:800}
+    .stat .unit{font-size:12px;color:var(--muted);margin-left:4px}
+    .hint{font-size:12px;color:var(--muted);line-height:1.5}
+    .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .btn{appearance:none;border:none;background:var(--primary);color:#fff;border-radius:14px;padding:14px 16px;font-size:16px;font-weight:700;cursor:pointer;min-height:48px}
+    .btn.secondary{background:#eef2ff;color:#1d4ed8}
+    .btn.plain{background:#f3f4f6;color:#111827}
+    .btn.danger{background:#fee2e2;color:#b91c1c}
+    .btn.small{padding:10px 12px;font-size:14px;min-height:auto;border-radius:12px}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+    .quick{border:1px solid var(--line);background:#fff;color:#111827;border-radius:14px;padding:14px 0;font-weight:800;font-size:16px}
+    .quick.active{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
+    .input,.select,.textarea{width:100%;border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px 14px;font-size:16px;outline:none}
+    .input:focus,.textarea:focus{border-color:#93c5fd;box-shadow:0 0 0 4px rgba(37,99,235,.08)}
+    .field{margin-bottom:12px}
+    .label{display:block;font-size:13px;color:#374151;margin-bottom:8px;font-weight:600}
+    .mini{font-size:12px;color:var(--muted)}
+    .section-title{font-size:14px;font-weight:800;margin:10px 0 10px;color:#111827}
+    .account{padding:14px;border:1px solid var(--line);background:#fff;border-radius:16px;margin-bottom:10px}
+    .account .name{font-size:16px;font-weight:700}
+    .account .meta{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5;word-break:break-all}
+    .badge{font-size:12px;border-radius:999px;padding:6px 10px;background:#f3f4f6;color:#374151}
+    .badge.ok{background:#dcfce7;color:#166534}
+    .badge.bad{background:#fee2e2;color:#991b1b}
+    .badge.stop{background:#f3f4f6;color:#4b5563}
+    .record{padding:14px;border:1px solid var(--line);background:#fff;border-radius:16px;margin-bottom:10px}
+    .record .amount{font-size:22px;font-weight:800}
+    .record .meta{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
+    .split{height:1px;background:var(--line);margin:10px 0}
+    .empty{padding:20px;text-align:center;color:var(--muted);font-size:14px;background:#fff;border:1px dashed var(--line);border-radius:16px}
+    .tabbar{position:fixed;left:0;right:0;bottom:0;padding:10px 14px calc(10px + var(--safe-bottom));background:rgba(255,255,255,.9);backdrop-filter:blur(14px);border-top:1px solid rgba(229,231,235,.9)}
+    .tabwrap{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .tab{border:none;background:#f3f4f6;color:#374151;border-radius:16px;padding:10px 6px;font-size:12px;font-weight:700}
+    .tab.active{background:#dbeafe;color:#1d4ed8}
+    .hidden{display:none !important}
+    .toast{position:fixed;left:50%;bottom:calc(90px + var(--safe-bottom));transform:translateX(-50%);background:rgba(17,24,39,.92);color:#fff;padding:12px 16px;border-radius:999px;font-size:14px;max-width:88%;text-align:center;z-index:99;opacity:0;pointer-events:none;transition:opacity .2s}
+    .toast.show{opacity:1}
+    .modal{position:fixed;inset:0;background:rgba(17,24,39,.42);display:none;align-items:flex-end;justify-content:center;z-index:50}
+    .modal.show{display:flex}
+    .sheet{width:min(720px,100%);background:#fff;border-radius:20px 20px 0 0;padding:18px 14px calc(18px + var(--safe-bottom));max-height:85vh;overflow:auto}
+    .sheet-title{font-size:18px;font-weight:800;margin-bottom:12px}
+    .list-simple{padding-left:18px;margin:8px 0}
+    .list-simple li{margin:8px 0;line-height:1.55}
+    .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:12px;border-radius:14px;font-size:13px;line-height:1.55}
+    .footer-space{height:4px}
+    @media (min-width:768px){
+      body{padding-bottom:calc(100px + var(--safe-bottom));}
+      .app{padding:0 18px}
+    }
+  </style>
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
+    <div class="topbar">
       <div>
-        <h1>停车券自动扣费工具</h1>
-        <p id="subTitle">前台 + 后台完整骨架</p>
+        <div class="title">停车券助手</div>
+        <div class="sub">手机微信 H5 · 本地版</div>
       </div>
-      <button id="openConfigBtn" class="ghost">接入配置</button>
-    </header>
+      <button class="pill" id="openHelp">使用说明</button>
+    </div>
 
-    <main class="grid">
-      <section class="card stats-card">
-        <h2>本月概览</h2>
-        <div class="stats" id="stats"></div>
-      </section>
-
-      <section class="card pay-card">
-        <h2>扣费</h2>
-        <div class="quick-buttons">
-          <button data-amount="5">5</button>
-          <button data-amount="10">10</button>
-          <button data-amount="15">15</button>
-          <button data-amount="20">20</button>
-          <button data-amount="25">25</button>
-        </div>
-        <div class="input-row">
-          <input id="amountInput" type="number" min="5" step="5" placeholder="输入金额（5元倍数）" />
-          <button id="previewBtn">生成方案</button>
-        </div>
-        <div id="previewBox" class="preview-box hidden"></div>
-      </section>
-
-      <section class="card accounts-card">
-        <div class="section-header">
-          <h2>账号池</h2>
-          <button id="addAccountBtn">新增账号</button>
-        </div>
-        <div id="accountsList" class="list"></div>
-      </section>
-
-      <section class="card tasks-card">
-        <div class="section-header">
-          <h2>任务记录</h2>
-          <div class="row-gap">
-            <button id="refreshTasksBtn" class="ghost">刷新</button>
-            <button id="resetMonthBtn" class="ghost danger">月度重置</button>
+    <section id="tab-home" class="tab-content">
+      <div class="card">
+        <div class="grid grid-2">
+          <div class="stat">
+            <div class="label">正常账号数</div>
+            <div><span class="value" id="statAccounts">0</span><span class="unit">个</span></div>
+          </div>
+          <div class="stat">
+            <div class="label">总剩余券数</div>
+            <div><span class="value" id="statCoupons">0</span><span class="unit">张</span></div>
+          </div>
+          <div class="stat">
+            <div class="label">本月已抵扣</div>
+            <div><span class="value" id="statDeduct">0</span><span class="unit">元</span></div>
+          </div>
+          <div class="stat">
+            <div class="label">本月已用券</div>
+            <div><span class="value" id="statUsed">0</span><span class="unit">张</span></div>
           </div>
         </div>
-        <div id="tasksList" class="list"></div>
-      </section>
-    </main>
+      </div>
+
+      <div class="card">
+        <h3>确认并执行</h3>
+        <div class="field">
+          <label class="label">快捷金额</label>
+          <div class="actions" id="quickActions"></div>
+        </div>
+        <div class="field">
+          <label class="label" for="customAmount">或输入自定义金额</label>
+          <input id="customAmount" class="input" inputmode="numeric" placeholder="请输入 5 的整数倍，如 75" />
+          <div class="mini" style="margin-top:8px">支持普通停车，也支持连续停多天后的总金额。</div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button class="btn secondary" id="previewBtn" style="flex:1">查看扣费方案</button>
+          <button class="btn" id="payBtn" style="flex:1">确认并执行</button>
+        </div>
+        <div class="split"></div>
+        <div id="planWrap" class="hidden">
+          <div class="section-title">方案预览</div>
+          <div id="planContent" class="hint"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:10px">
+          <h3 style="margin:0">接入配置</h3>
+          <span class="badge">预留</span>
+        </div>
+        <div class="hint" style="line-height:1.7">
+          管理链接：<br/>
+          <span style="word-break:break-all">http://blackcat2.vankeservice.com/platSellerWeb/dist/dist-gray/index.html#/login</span>
+        </div>
+        <div class="warn" style="margin-top:10px">
+          当前版本是可在手机微信里正常使用的 H5 本地工具，已经支持账号管理、金额输入、方案计算和扣费记录。
+          真实自动登录并执行网页扣券，需要后续接一个后台执行器；不要把大量真实账号密码长期只保存在前端本地。
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-accounts" class="tab-content hidden">
+      <div class="card">
+        <div class="row" style="margin-bottom:10px">
+          <h3 style="margin:0">账号池</h3>
+          <button class="btn small secondary" id="openAddAccount">新增账号</button>
+        </div>
+        <div class="hint" style="margin-bottom:12px">账号数量不写死。系统会优先使用剩余券较多的账号，尽量减少切换数量。</div>
+        <div id="accountList"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:10px">
+          <h3 style="margin:0">月度操作</h3>
+        </div>
+        <div class="inline">
+          <button class="btn small plain" id="resetMonthBtn">新月重置为每号 30 张</button>
+          <button class="btn small plain" id="exportBtn">导出数据</button>
+          <button class="btn small plain" id="importBtn">导入数据</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json" class="hidden" />
+      </div>
+    </section>
+
+    <section id="tab-records" class="tab-content hidden">
+      <div class="card">
+        <div class="row" style="margin-bottom:10px">
+          <h3 style="margin:0">扣费记录</h3>
+          <button class="btn small plain" id="clearRecordsBtn">清空记录</button>
+        </div>
+        <div id="recordList"></div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="tab-content hidden">
+      <div class="card">
+        <h3>设置</h3>
+        <div class="field">
+          <label class="label" for="targetUrl">管理链接</label>
+          <input id="targetUrl" class="input" placeholder="请输入管理链接" />
+        </div>
+        <div class="field">
+          <label class="label" for="defaultQuota">默认每月券数</label>
+          <input id="defaultQuota" class="input" inputmode="numeric" placeholder="30" />
+        </div>
+        <button class="btn" id="saveSettingsBtn" style="width:100%">保存设置</button>
+        <div class="split"></div>
+        <div class="warn">
+          这版 H5 可以直接在微信中作为自用工具使用，但真实自动扣券需要增加服务端执行模块。当前扣费是按你的规则在本地完成“账号分配 + 库存扣减 + 记录留存”。
+        </div>
+      </div>
+    </section>
+
+    <div class="footer-space"></div>
   </div>
 
-  <div id="configModal" class="modal hidden">
-    <div class="modal-card">
-      <div class="section-header"><h3>接入配置</h3><button class="ghost" data-close="#configModal">关闭</button></div>
-      <label>目标链接
-        <input id="targetUrlInput" type="text" />
-      </label>
-      <label>执行模式
-        <select id="executionModeSelect">
-          <option value="mock">mock（可直接测试）</option>
-          <option value="approved_integration_only">预留接入（不执行）</option>
-        </select>
-      </label>
-      <label class="checkbox-row">
-        <input id="requireConfirmInput" type="checkbox" checked />
-        <span>执行前必须确认</span>
-      </label>
-      <div class="actions">
-        <button id="saveConfigBtn">保存配置</button>
-      </div>
-      <p class="hint">说明：真实第三方执行器未在本版本中启用；这版提供完整前后台结构、任务流和适配器接口。</p>
+  <div class="tabbar">
+    <div class="tabwrap">
+      <button class="tab active" data-tab="home">扣费</button>
+      <button class="tab" data-tab="accounts">账号</button>
+      <button class="tab" data-tab="records">记录</button>
+      <button class="tab" data-tab="settings">设置</button>
     </div>
   </div>
 
-  <div id="accountModal" class="modal hidden">
-    <div class="modal-card">
-      <div class="section-header"><h3 id="accountModalTitle">新增账号</h3><button class="ghost" data-close="#accountModal">关闭</button></div>
-      <input type="hidden" id="accountIdInput" />
-      <label>业主备注名
-        <input id="ownerNameInput" type="text" />
-      </label>
-      <label>登录账号
-        <input id="loginNameInput" type="text" />
-      </label>
-      <label>登录密码
-        <input id="passwordInput" type="text" />
-      </label>
-      <label>本月总券数
-        <input id="monthQuotaInput" type="number" min="0" step="1" value="30" />
-      </label>
-      <label>本月剩余券数
-        <input id="remainCountInput" type="number" min="0" step="1" value="30" />
-      </label>
-      <label>状态
-        <select id="statusInput">
+  <div class="toast" id="toast"></div>
+
+  <div class="modal" id="accountModal">
+    <div class="sheet">
+      <div class="row" style="margin-bottom:12px">
+        <div class="sheet-title" id="accountModalTitle">新增账号</div>
+        <button class="btn small plain" id="closeAccountModal">关闭</button>
+      </div>
+      <div class="field">
+        <label class="label" for="accountName">账号备注名</label>
+        <input id="accountName" class="input" placeholder="如：A 业主 / 自己账号" />
+      </div>
+      <div class="field">
+        <label class="label" for="accountLogin">登录账号（可选）</label>
+        <input id="accountLogin" class="input" placeholder="仅本机保存" />
+      </div>
+      <div class="field">
+        <label class="label" for="accountPassword">登录密码（可选）</label>
+        <input id="accountPassword" type="password" class="input" placeholder="仅本机保存" />
+      </div>
+      <div class="field">
+        <label class="label" for="accountRemain">本月剩余券数</label>
+        <input id="accountRemain" class="input" inputmode="numeric" placeholder="默认 30" />
+      </div>
+      <div class="field">
+        <label class="label" for="accountStatus">账号状态</label>
+        <select id="accountStatus" class="select input">
           <option value="normal">正常</option>
-          <option value="abnormal">异常</option>
           <option value="disabled">停用</option>
+          <option value="error">异常</option>
         </select>
-      </label>
-      <label>备注
-        <input id="noteInput" type="text" />
-      </label>
-      <div class="actions">
-        <button id="saveAccountBtn">保存</button>
+      </div>
+      <div class="warn">密码只会保存在当前浏览器本地。正式接真实自动登录前，不建议长期只在前端保存全部真实密码。</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn secondary" id="deleteAccountBtn" style="flex:1">删除</button>
+        <button class="btn" id="saveAccountBtn" style="flex:1">保存</button>
       </div>
     </div>
   </div>
 
-  <div id="toast"></div>
-  <script src="/app.js"></script>
+  <div class="modal" id="helpModal">
+    <div class="sheet">
+      <div class="row" style="margin-bottom:12px">
+        <div class="sheet-title">怎么用</div>
+        <button class="btn small plain" id="closeHelp">关闭</button>
+      </div>
+      <ol class="list-simple">
+        <li>先去“账号”里录入各个业主账号，至少填备注名和剩余券数。</li>
+        <li>回到“扣费”，点击 5/10/15/20/25 快捷金额，或输入自定义金额。</li>
+        <li>点“查看扣费方案”，能看到本次需要几张券、分几轮、会用到哪些账号。</li>
+        <li>点“一键扣费”后，本地会自动扣减对应账号剩余券，并留下扣费记录。</li>
+        <li>金额大于 25 元时，会自动按 25 元分轮，例如 65 元会拆成 25 + 25 + 15。</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'parking_coupon_h5_v1';
+    const DEFAULT_URL = 'http://blackcat2.vankeservice.com/platSellerWeb/dist/dist-gray/index.html#/login';
+    const quickAmounts = [5,10,15,20,25];
+    let state = loadState();
+    let editingAccountId = null;
+    let selectedQuick = null;
+
+    function loadState(){
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(raw){
+          const data = JSON.parse(raw);
+          return {
+            settings: {
+              targetUrl: data.settings?.targetUrl || DEFAULT_URL,
+              defaultQuota: Number(data.settings?.defaultQuota || 30)
+            },
+            accounts: Array.isArray(data.accounts) ? data.accounts : [],
+            records: Array.isArray(data.records) ? data.records : []
+          }
+        }
+      } catch(e){}
+      return {
+        settings: { targetUrl: DEFAULT_URL, defaultQuota: 30 },
+        accounts: [],
+        records: []
+      }
+    }
+
+    function saveState(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      render();
+    }
+
+    function uid(prefix='id'){
+      return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    }
+
+    function showToast(msg){
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(()=>el.classList.remove('show'), 2200);
+    }
+
+    function money(n){ return Number(n || 0).toFixed(0); }
+    function timeText(ts){
+      const d = new Date(ts);
+      const p = n => String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+    function monthKey(ts){
+      const d = new Date(ts || Date.now());
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    }
+
+    function getNormalAccounts(){
+      return state.accounts.filter(a => a.status === 'normal' && Number(a.remainCouponCount || 0) > 0);
+    }
+
+    function getStats(){
+      const activeAccounts = state.accounts.filter(a => a.status === 'normal').length;
+      const totalCoupons = state.accounts.filter(a => a.status === 'normal').reduce((s,a)=>s + Number(a.remainCouponCount || 0), 0);
+      const currentMonth = monthKey(Date.now());
+      const monthRecords = state.records.filter(r => monthKey(r.createdAt) === currentMonth);
+      const totalDeduct = monthRecords.reduce((s,r)=>s + Number(r.inputAmount || 0), 0);
+      const totalUsed = monthRecords.reduce((s,r)=>s + Number(r.requiredCouponCount || 0), 0);
+      return {activeAccounts,totalCoupons,totalDeduct,totalUsed};
+    }
+
+    function validateAmount(v){
+      const n = Number(v);
+      if(!Number.isFinite(n) || n <= 0) return '请输入大于 0 的金额';
+      if(n % 5 !== 0) return '金额必须是 5 的整数倍';
+      return '';
+    }
+
+    function splitRounds(amount){
+      const rounds = [];
+      let remaining = Number(amount);
+      while(remaining > 25){
+        rounds.push(25);
+        remaining -= 25;
+      }
+      if(remaining > 0) rounds.push(remaining);
+      return rounds;
+    }
+
+    function buildPlan(amount){
+      const err = validateAmount(amount);
+      if(err) return { ok:false, message: err };
+      const needCoupons = Number(amount)/5;
+      const normalAccounts = getNormalAccounts().map(a=>({...a, remainCouponCount: Number(a.remainCouponCount || 0)}));
+      const totalRemain = normalAccounts.reduce((s,a)=>s+a.remainCouponCount,0);
+      if(totalRemain < needCoupons){
+        return { ok:false, message:`当前正常账号剩余券不足，还差 ${needCoupons - totalRemain} 张` };
+      }
+
+      const working = normalAccounts.sort((a,b)=>b.remainCouponCount - a.remainCouponCount || (new Date(a.lastSuccessTime||0) - new Date(b.lastSuccessTime||0)));
+      const rounds = splitRounds(Number(amount));
+      const roundPlans = [];
+
+      for(let i=0;i<rounds.length;i++){
+        let need = rounds[i] / 5;
+        const allocations = [];
+        const candidates = working.filter(a=>a.remainCouponCount > 0).sort((a,b)=>b.remainCouponCount - a.remainCouponCount || (new Date(a.lastSuccessTime||0) - new Date(b.lastSuccessTime||0)));
+        for(const acc of candidates){
+          if(need <= 0) break;
+          const use = Math.min(acc.remainCouponCount, need);
+          if(use > 0){
+            allocations.push({
+              accountId: acc.id,
+              accountName: acc.name,
+              usedCouponCount: use,
+              deductAmount: use * 5
+            });
+            acc.remainCouponCount -= use;
+            need -= use;
+          }
+        }
+        if(need > 0){
+          return { ok:false, message:'方案计算失败，请检查账号剩余券数' };
+        }
+        roundPlans.push({
+          roundNo: i + 1,
+          roundAmount: rounds[i],
+          requiredCouponCount: rounds[i]/5,
+          allocations
+        });
+      }
+
+      return {
+        ok:true,
+        inputAmount: Number(amount),
+        requiredCouponCount: needCoupons,
+        roundCount: rounds.length,
+        rounds: roundPlans
+      };
+    }
+
+    function executePlan(plan){
+      const record = {
+        id: uid('task'),
+        createdAt: Date.now(),
+        inputAmount: plan.inputAmount,
+        requiredCouponCount: plan.requiredCouponCount,
+        roundCount: plan.roundCount,
+        status: 'success',
+        rounds: plan.rounds,
+      };
+
+      for(const round of plan.rounds){
+        for(const alloc of round.allocations){
+          const target = state.accounts.find(a => a.id === alloc.accountId);
+          if(!target || target.status !== 'normal' || Number(target.remainCouponCount || 0) < alloc.usedCouponCount){
+            record.status = 'partial';
+            record.errorMessage = `账号 ${alloc.accountName} 剩余券不足或状态异常`;
+            break;
+          }
+          target.remainCouponCount = Number(target.remainCouponCount || 0) - alloc.usedCouponCount;
+          target.usedCouponCount = Number(target.usedCouponCount || 0) + alloc.usedCouponCount;
+          target.lastSuccessTime = new Date().toISOString();
+        }
+        if(record.status !== 'success') break;
+      }
+
+      state.records.unshift(record);
+      saveState();
+      return record;
+    }
+
+    function currentAmountValue(){
+      const custom = document.getElementById('customAmount').value.trim();
+      if(custom) return Number(custom);
+      return selectedQuick;
+    }
+
+    function renderQuick(){
+      const wrap = document.getElementById('quickActions');
+      wrap.innerHTML = '';
+      quickAmounts.forEach(v => {
+        const btn = document.createElement('button');
+        btn.className = 'quick' + (selectedQuick === v ? ' active' : '');
+        btn.textContent = `${v}`;
+        btn.addEventListener('click', ()=>{
+          selectedQuick = v;
+          document.getElementById('customAmount').value = '';
+          renderQuick();
+          document.getElementById('planWrap').classList.add('hidden');
+        });
+        wrap.appendChild(btn);
+      });
+    }
+
+    function renderStats(){
+      const s = getStats();
+      document.getElementById('statAccounts').textContent = s.activeAccounts;
+      document.getElementById('statCoupons').textContent = s.totalCoupons;
+      document.getElementById('statDeduct').textContent = money(s.totalDeduct);
+      document.getElementById('statUsed').textContent = s.totalUsed;
+    }
+
+    function statusBadge(status){
+      if(status === 'normal') return '<span class="badge ok">正常</span>';
+      if(status === 'error') return '<span class="badge bad">异常</span>';
+      return '<span class="badge stop">停用</span>';
+    }
+
+    function renderAccounts(){
+      const list = document.getElementById('accountList');
+      if(!state.accounts.length){
+        list.innerHTML = '<div class="empty">还没有账号，先新增一个。</div>';
+        return;
+      }
+      list.innerHTML = state.accounts.map(acc => `
+        <div class="account">
+          <div class="row">
+            <div>
+              <div class="name">${escapeHtml(acc.name || '未命名账号')}</div>
+              <div class="meta">剩余券：${Number(acc.remainCouponCount || 0)} 张 ｜ 已用：${Number(acc.usedCouponCount || 0)} 张</div>
+            </div>
+            ${statusBadge(acc.status)}
+          </div>
+          <div class="meta">登录账号：${escapeHtml(acc.loginName || '未填写')}<br/>最近成功：${acc.lastSuccessTime ? timeText(acc.lastSuccessTime) : '暂无'}</div>
+          <div class="inline" style="margin-top:10px">
+            <button class="btn small plain" onclick="openEditAccount('${acc.id}')">编辑</button>
+            <button class="btn small plain" onclick="toggleAccountStatus('${acc.id}')">${acc.status === 'normal' ? '停用' : '启用'}</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderRecords(){
+      const list = document.getElementById('recordList');
+      if(!state.records.length){
+        list.innerHTML = '<div class="empty">还没有扣费记录。</div>';
+        return;
+      }
+      list.innerHTML = state.records.map(rec => {
+        const detailLines = rec.rounds.map(round => {
+          const alloc = round.allocations.map(a => `${escapeHtml(a.accountName)} ${a.usedCouponCount}张`).join('，');
+          return `第 ${round.roundNo} 轮 ${round.roundAmount} 元：${alloc}`;
+        }).join('<br/>');
+        return `
+          <div class="record">
+            <div class="row">
+              <div class="amount">${money(rec.inputAmount)} 元</div>
+              <span class="badge ${rec.status === 'success' ? 'ok' : 'bad'}">${rec.status === 'success' ? '成功' : '部分完成'}</span>
+            </div>
+            <div class="meta">
+              时间：${timeText(rec.createdAt)}<br/>
+              共使用 ${rec.requiredCouponCount} 张券，分 ${rec.roundCount} 轮<br/>
+              ${detailLines}
+              ${rec.errorMessage ? `<br/>异常：${escapeHtml(rec.errorMessage)}` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSettings(){
+      document.getElementById('targetUrl').value = state.settings.targetUrl || DEFAULT_URL;
+      document.getElementById('defaultQuota').value = state.settings.defaultQuota || 30;
+    }
+
+    function render(){
+      renderQuick();
+      renderStats();
+      renderAccounts();
+      renderRecords();
+      renderSettings();
+    }
+
+    function escapeHtml(str=''){
+      return String(str)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+
+    function openTab(name){
+      document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active', btn.dataset.tab === name));
+      document.querySelectorAll('.tab-content').forEach(el=>el.classList.add('hidden'));
+      document.getElementById(`tab-${name}`).classList.remove('hidden');
+    }
+
+    function openAccountModal(account){
+      editingAccountId = account?.id || null;
+      document.getElementById('accountModalTitle').textContent = editingAccountId ? '编辑账号' : '新增账号';
+      document.getElementById('accountName').value = account?.name || '';
+      document.getElementById('accountLogin').value = account?.loginName || '';
+      document.getElementById('accountPassword').value = account?.password || '';
+      document.getElementById('accountRemain').value = Number(account?.remainCouponCount ?? state.settings.defaultQuota ?? 30);
+      document.getElementById('accountStatus').value = account?.status || 'normal';
+      document.getElementById('deleteAccountBtn').style.visibility = editingAccountId ? 'visible' : 'hidden';
+      document.getElementById('accountModal').classList.add('show');
+    }
+
+    function closeAccountModal(){
+      document.getElementById('accountModal').classList.remove('show');
+    }
+
+    window.openEditAccount = function(id){
+      const acc = state.accounts.find(a=>a.id === id);
+      if(acc) openAccountModal(acc);
+    }
+
+    window.toggleAccountStatus = function(id){
+      const acc = state.accounts.find(a=>a.id === id);
+      if(!acc) return;
+      acc.status = acc.status === 'normal' ? 'disabled' : 'normal';
+      saveState();
+      showToast(acc.status === 'normal' ? '账号已启用' : '账号已停用');
+    }
+
+    
+    function summarizePlan(plan){
+      const lines = [];
+      lines.push(`本次金额：${money(plan.inputAmount)} 元`);
+      lines.push(`需要券数：${plan.requiredCouponCount} 张`);
+      lines.push(`执行轮次：${plan.roundCount} 轮`);
+      plan.rounds.forEach(round => {
+        const allocText = round.allocations.map(a => `${a.accountName} ${a.usedCouponCount}张`).join('，');
+        lines.push(`第${round.roundNo}轮 ${round.roundAmount}元：${allocText}`);
+      });
+      return lines.join('
+');
+    }
+
+    function findRecentDuplicate(amount){
+      const now = Date.now();
+      return (state.records || []).find(r => Number(r.inputAmount) === Number(amount) && r.status === 'success' && now - Number(r.createdAt || 0) <= 2 * 60 * 1000);
+    }
+
+function previewPlan(){
+      const amount = currentAmountValue();
+      const plan = buildPlan(amount);
+      const wrap = document.getElementById('planWrap');
+      const content = document.getElementById('planContent');
+      wrap.classList.remove('hidden');
+      if(!plan.ok){
+        content.innerHTML = `<span style="color:#b91c1c">${escapeHtml(plan.message)}</span>`;
+        return null;
+      }
+      const lines = [];
+      lines.push(`本次金额 ${plan.inputAmount} 元，需要 ${plan.requiredCouponCount} 张券，共 ${plan.roundCount} 轮。`);
+      for(const round of plan.rounds){
+        const t = round.allocations.map(a=>`${escapeHtml(a.accountName)} ${a.usedCouponCount}张`).join('，');
+        lines.push(`第 ${round.roundNo} 轮 ${round.roundAmount} 元：${t}`);
+      }
+      content.innerHTML = lines.join('<br/>');
+      return plan;
+    }
+
+    document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click', ()=>openTab(btn.dataset.tab)));
+    document.getElementById('customAmount').addEventListener('input', ()=>{
+      selectedQuick = null;
+      renderQuick();
+      document.getElementById('planWrap').classList.add('hidden');
+    });
+    document.getElementById('previewBtn').addEventListener('click', ()=>{
+      const plan = previewPlan();
+      if(!plan) showToast('请先检查金额或账号剩余券');
+    });
+    document.getElementById('payBtn').addEventListener('click', ()=>{
+      const plan = previewPlan();
+      if(!plan) return;
+
+      const duplicate = findRecentDuplicate(plan.inputAmount);
+      let message = '请确认本次扣费方案：\n\n' + summarizePlan(plan);
+      if(duplicate){
+        message += `\n\n提醒：你在 2 分钟内已经成功扣过一笔 ${money(plan.inputAmount)} 元，请确认不是重复操作。`;
+      }
+      message += '\n\n点击“确定”后才会正式扣费。';
+
+      if(!confirm(message)) return;
+
+      const payBtn = document.getElementById('payBtn');
+      if(payBtn.dataset.locked === '1') return;
+      payBtn.dataset.locked = '1';
+      payBtn.disabled = true;
+      const oldText = payBtn.textContent;
+      payBtn.textContent = '执行中...';
+
+      try {
+        const record = executePlan(plan);
+        if(record.status === 'success'){
+          showToast(`扣费成功：${record.inputAmount} 元`);
+          document.getElementById('customAmount').value = '';
+          selectedQuick = null;
+          renderQuick();
+          document.getElementById('planWrap').classList.add('hidden');
+        } else {
+          showToast('部分完成，请到记录页查看');
+        }
+        openTab('records');
+      } finally {
+        setTimeout(()=>{
+          payBtn.dataset.locked = '0';
+          payBtn.disabled = false;
+          payBtn.textContent = oldText;
+        }, 5000);
+      }
+    });
+
+    document.getElementById('openAddAccount').addEventListener('click', ()=>openAccountModal());
+    document.getElementById('closeAccountModal').addEventListener('click', closeAccountModal);
+    document.getElementById('saveAccountBtn').addEventListener('click', ()=>{
+      const name = document.getElementById('accountName').value.trim();
+      const loginName = document.getElementById('accountLogin').value.trim();
+      const password = document.getElementById('accountPassword').value;
+      const remain = Number(document.getElementById('accountRemain').value || state.settings.defaultQuota || 30);
+      const status = document.getElementById('accountStatus').value;
+      if(!name){ showToast('请先填写账号备注名'); return; }
+      if(remain < 0 || !Number.isFinite(remain)){ showToast('剩余券数不合法'); return; }
+      if(editingAccountId){
+        const acc = state.accounts.find(a=>a.id === editingAccountId);
+        if(acc){
+          acc.name = name;
+          acc.loginName = loginName;
+          acc.password = password;
+          acc.remainCouponCount = remain;
+          acc.status = status;
+        }
+      }else{
+        state.accounts.unshift({
+          id: uid('acc'),
+          name,
+          loginName,
+          password,
+          remainCouponCount: remain,
+          usedCouponCount: 0,
+          status,
+          lastSuccessTime: ''
+        });
+      }
+      saveState();
+      closeAccountModal();
+      showToast('账号已保存');
+    });
+    document.getElementById('deleteAccountBtn').addEventListener('click', ()=>{
+      if(!editingAccountId) return;
+      state.accounts = state.accounts.filter(a=>a.id !== editingAccountId);
+      saveState();
+      closeAccountModal();
+      showToast('账号已删除');
+    });
+
+    document.getElementById('resetMonthBtn').addEventListener('click', ()=>{
+      const quota = Number(state.settings.defaultQuota || 30);
+      state.accounts.forEach(a=>{
+        a.remainCouponCount = quota;
+        a.usedCouponCount = 0;
+      });
+      saveState();
+      showToast(`已重置为每号 ${quota} 张`);
+    });
+
+    document.getElementById('clearRecordsBtn').addEventListener('click', ()=>{
+      if(!confirm('确定清空全部扣费记录吗？')) return;
+      state.records = [];
+      saveState();
+      showToast('记录已清空');
+    });
+
+    document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
+      const targetUrl = document.getElementById('targetUrl').value.trim() || DEFAULT_URL;
+      const defaultQuota = Number(document.getElementById('defaultQuota').value || 30);
+      if(!defaultQuota || defaultQuota < 1){ showToast('默认每月券数不合法'); return; }
+      state.settings.targetUrl = targetUrl;
+      state.settings.defaultQuota = defaultQuota;
+      saveState();
+      showToast('设置已保存');
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `parking-coupon-${monthKey(Date.now())}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    document.getElementById('importBtn').addEventListener('click', ()=>document.getElementById('importFile').click());
+    document.getElementById('importFile').addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        state = {
+          settings: {
+            targetUrl: data.settings?.targetUrl || DEFAULT_URL,
+            defaultQuota: Number(data.settings?.defaultQuota || 30)
+          },
+          accounts: Array.isArray(data.accounts) ? data.accounts : [],
+          records: Array.isArray(data.records) ? data.records : []
+        };
+        saveState();
+        showToast('数据已导入');
+      } catch(err){
+        showToast('导入失败，文件格式不正确');
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    document.getElementById('openHelp').addEventListener('click', ()=>document.getElementById('helpModal').classList.add('show'));
+    document.getElementById('closeHelp').addEventListener('click', ()=>document.getElementById('helpModal').classList.remove('show'));
+
+    render();
+  </script>
 </body>
 </html>
