@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'parking_coupon_h5_v6';
-  var VERSION = 'v2026.04.20-6';
+  var STORAGE_KEY = 'parking_coupon_h5_v7';
+  var VERSION = 'v2026.04.20-7';
   var EXECUTE_COOLDOWN_MS = 5000;
   var DUPLICATE_WARN_MS = 2 * 60 * 1000;
 
@@ -326,23 +326,13 @@
   function allocateCoupons(accounts, needCoupons, rotateSeed) {
     var remainingNeed = needCoupons;
     var allocations = [];
-    var candidates = accounts.filter(function (acc) { return toInt(acc.remaining, 0) > 0; });
-
-    candidates.sort(function (a, b) {
-      var diff = toInt(b.remaining, 0) - toInt(a.remaining, 0);
-      if (diff !== 0) return diff;
-      return ((a.__order || 0) - (b.__order || 0));
-    });
-
-    if (candidates.length > 1 && candidates.every(function (acc) { return toInt(acc.remaining, 0) === toInt(candidates[0].remaining, 0); })) {
-      var shift = rotateSeed % candidates.length;
-      candidates = candidates.slice(shift).concat(candidates.slice(0, shift));
-    }
-
     var lastOrder = rotateSeed;
-    for (var i = 0; i < candidates.length; i += 1) {
+
+    // 按账号列表顺序优先消耗，先用完一个账号，再用下一个账号。
+    // 不做轮转，不做均摊。
+    for (var i = 0; i < accounts.length; i += 1) {
       if (remainingNeed <= 0) break;
-      var acc = candidates[i];
+      var acc = accounts[i];
       var available = toInt(acc.remaining, 0);
       if (available <= 0) continue;
       var useCoupons = available >= remainingNeed ? remainingNeed : available;
