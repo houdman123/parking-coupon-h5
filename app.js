@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'parking_coupon_h5_v3';
-  var VERSION = 'v2026.04.20-3';
+  var STORAGE_KEY = 'parking_coupon_h5_v5';
+  var VERSION = 'v2026.04.20-5';
   var EXECUTE_COOLDOWN_MS = 5000;
   var DUPLICATE_WARN_MS = 2 * 60 * 1000;
 
@@ -47,6 +47,11 @@
     refs.summaryBox = document.getElementById('summaryBox');
     refs.btnResetMonth = document.getElementById('btnResetMonth');
     refs.btnExportData = document.getElementById('btnExportData');
+    refs.confirmModal = document.getElementById('confirmModal');
+    refs.confirmModalBody = document.getElementById('confirmModalBody');
+    refs.modalCloseBtn = document.getElementById('modalCloseBtn');
+    refs.modalCancelBtn = document.getElementById('modalCancelBtn');
+    refs.modalConfirmBtn = document.getElementById('modalConfirmBtn');
   }
 
   function bindEvents() {
@@ -98,6 +103,18 @@
 
     refs.btnExportData.addEventListener('click', function () {
       exportData();
+    });
+
+    refs.modalCloseBtn.addEventListener('click', closeConfirmModal);
+    refs.modalCancelBtn.addEventListener('click', closeConfirmModal);
+    refs.confirmModal.querySelector('.modal-backdrop').addEventListener('click', closeConfirmModal);
+    refs.modalConfirmBtn.addEventListener('click', function () {
+      var plan = refs.confirmModal.__plan;
+      closeConfirmModal();
+      if (plan) {
+        lastExecuteAt = Date.now();
+        doExecute(plan);
+      }
     });
   }
 
@@ -183,19 +200,15 @@
 
     var duplicate = findRecentDuplicate(plan.amount);
     if (duplicate) {
-      var duplicateText = '你在 2 分钟内已经成功执行过一笔 ' + plan.amount + ' 元扣费，\n时间：' + formatTime(duplicate.createdAt) + '\n是否仍要继续？';
+      var duplicateText = '你在 2 分钟内已经成功执行过一笔 ' + plan.amount + ' 元扣费，
+时间：' + formatTime(duplicate.createdAt) + '
+是否仍要继续？';
       if (!window.confirm(duplicateText)) {
         return;
       }
     }
 
-    var confirmText = buildConfirmText(plan);
-    if (!window.confirm(confirmText)) {
-      return;
-    }
-
-    lastExecuteAt = now;
-    doExecute(plan);
+    openConfirmModal(plan);
   }
 
   function doExecute(plan) {
@@ -230,8 +243,11 @@
     };
 
     state.records.unshift(record);
+    state.selectedAmount = null;
     saveState();
     currentPlan = null;
+    clearQuickSelection();
+    if (refs.customAmount) refs.customAmount.value = '';
     renderAll();
 
     if (record.status === 'success') {
@@ -267,7 +283,7 @@
       message: ''
     };
 
-    var activeAccounts = sortAccountsForAllocation(getActiveAccounts());
+    var activeAccounts = getActiveAccounts();
     var totalCoupons = getTotalCoupons();
     if (totalCoupons < plan.requiredCoupons) {
       plan.ok = false;
@@ -276,14 +292,18 @@
     }
 
     var remainAmount = amount;
-    var shadow = deepClone(activeAccounts);
+    var shadow = deepClone(activeAccounts).map(function (acc, idx) {
+      acc.__order = idx;
+      return acc;
+    });
     var roundNo = 0;
+    var rotateSeed = 0;
 
     while (remainAmount > 0) {
       roundNo += 1;
       var roundAmount = remainAmount >= 25 ? 25 : remainAmount;
       var roundCoupons = roundAmount / 5;
-      var alloc = allocateCoupons(shadow, roundCoupons);
+      var alloc = allocateCoupons(shadow, roundCoupons, rotateSeed);
       var round = {
         roundNo: roundNo,
         amount: roundAmount,
@@ -292,6 +312,9 @@
         ok: alloc.ok,
         message: alloc.message || ''
       };
+      if (alloc.allocations.length) {
+        rotateSeed = alloc.lastOrder + 1;
+      }
       plan.rounds.push(round);
       if (!alloc.ok) {
         plan.ok = false;
@@ -302,14 +325,26 @@
     return plan;
   }
 
-  function allocateCoupons(accounts, needCoupons) {
+  function allocateCoupons(accounts, needCoupons, rotateSeed) {
     var remainingNeed = needCoupons;
     var allocations = [];
-    var sorted = sortAccountsForAllocation(accounts);
+    var candidates = accounts.filter(function (acc) { return toInt(acc.remaining, 0) > 0; });
 
-    for (var i = 0; i < sorted.length; i += 1) {
+    candidates.sort(function (a, b) {
+      var diff = toInt(b.remaining, 0) - toInt(a.remaining, 0);
+      if (diff !== 0) return diff;
+      return ((a.__order || 0) - (b.__order || 0));
+    });
+
+    if (candidates.length > 1 && candidates.every(function (acc) { return toInt(acc.remaining, 0) === toInt(candidates[0].remaining, 0); })) {
+      var shift = rotateSeed % candidates.length;
+      candidates = candidates.slice(shift).concat(candidates.slice(0, shift));
+    }
+
+    var lastOrder = rotateSeed;
+    for (var i = 0; i < candidates.length; i += 1) {
       if (remainingNeed <= 0) break;
-      var acc = sorted[i];
+      var acc = candidates[i];
       var available = toInt(acc.remaining, 0);
       if (available <= 0) continue;
       var useCoupons = available >= remainingNeed ? remainingNeed : available;
@@ -320,24 +355,50 @@
         coupons: useCoupons,
         amount: useCoupons * 5
       });
+      lastOrder = acc.__order || 0;
       remainingNeed -= useCoupons;
     }
 
     return {
       ok: remainingNeed === 0,
       message: remainingNeed === 0 ? '' : '券数不足',
-      allocations: allocations
+      allocations: allocations,
+      lastOrder: lastOrder
     };
   }
 
-  function sortAccountsForAllocation(accounts) {
-    var arr = deepClone(accounts);
-    arr.sort(function (a, b) {
-      var diff = toInt(b.remaining, 0) - toInt(a.remaining, 0);
-      if (diff !== 0) return diff;
-      return (a.name || '').localeCompare(b.name || '');
+
+
+  function openConfirmModal(plan) {
+    refs.confirmModal.__plan = plan;
+    refs.confirmModalBody.innerHTML = buildConfirmHtml(plan);
+    refs.confirmModal.classList.remove('hidden');
+    refs.confirmModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+  }
+
+  function closeConfirmModal() {
+    refs.confirmModal.__plan = null;
+    refs.confirmModal.classList.add('hidden');
+    refs.confirmModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open');
+  }
+
+  function buildConfirmHtml(plan) {
+    var html = '';
+    html += '<div class="modal-line"><strong>本次金额：</strong>' + plan.amount + ' 元</div>';
+    html += '<div class="modal-line"><strong>需要券数：</strong>' + plan.requiredCoupons + ' 张</div>';
+    html += '<div class="modal-line"><strong>执行轮数：</strong>' + plan.rounds.length + ' 轮</div>';
+    each(plan.rounds, function (round) {
+      html += '<div class="modal-round">';
+      html += '<div class="modal-line"><strong>第 ' + round.roundNo + ' 轮：</strong>' + round.amount + ' 元</div>';
+      each(round.allocations, function (alloc) {
+        html += '<div class="modal-line">' + escapeHtml(alloc.name) + '：' + alloc.coupons + ' 张</div>';
+      });
+      html += '</div>';
     });
-    return arr;
+    html += '<div class="modal-line" style="margin-top:12px;color:#687188;">确认后才会执行，不会一点击就直接扣费。</div>';
+    return html;
   }
 
   function renderAll() {
@@ -629,10 +690,20 @@
       if (!Array.isArray(data.accounts)) data.accounts = [];
       if (!Array.isArray(data.records)) data.records = [];
       if (typeof data.selectedAmount === 'undefined') data.selectedAmount = null;
+      upgradeLegacyData(data);
       return data;
     } catch (e) {
       return createDefaultState();
     }
+  }
+
+  function upgradeLegacyData(data) {
+    each(data.accounts, function (acc) {
+      acc.remaining = toInt(acc.remaining, 0);
+      acc.used = toInt(acc.used, 0);
+      if (!acc.status) acc.status = 'normal';
+      if (!acc.name) acc.name = '未命名账号';
+    });
   }
 
   function saveState() {
@@ -643,7 +714,7 @@
     return {
       accounts: [
         { id: createId('acc'), name: '测试账号A', remaining: 30, used: 0, status: 'normal', createdAt: Date.now(), lastSuccessAt: null },
-        { id: createId('acc'), name: '测试账号B', remaining: 20, used: 0, status: 'normal', createdAt: Date.now(), lastSuccessAt: null }
+        { id: createId('acc'), name: '测试账号B', remaining: 30, used: 0, status: 'normal', createdAt: Date.now(), lastSuccessAt: null }
       ],
       records: [],
       selectedAmount: null
