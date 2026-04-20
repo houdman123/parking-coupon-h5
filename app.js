@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'parking_coupon_h5_v5';
-  var VERSION = 'v2026.04.20-5';
+  var STORAGE_KEY = 'parking_coupon_h5_v6';
+  var VERSION = 'v2026.04.20-6';
   var EXECUTE_COOLDOWN_MS = 5000;
   var DUPLICATE_WARN_MS = 2 * 60 * 1000;
 
@@ -200,9 +200,7 @@
 
     var duplicate = findRecentDuplicate(plan.amount);
     if (duplicate) {
-      var duplicateText = '你在 2 分钟内已经成功执行过一笔 ' + plan.amount + ' 元扣费，
-时间：' + formatTime(duplicate.createdAt) + '
-是否仍要继续？';
+      var duplicateText = '你在 2 分钟内已经成功执行过一笔 ' + plan.amount + ' 元扣费，\n时间：' + formatTime(duplicate.createdAt) + '\n是否仍要继续？';
       if (!window.confirm(duplicateText)) {
         return;
       }
