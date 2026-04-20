@@ -609,8 +609,7 @@
         const allocText = round.allocations.map(a => `${a.accountName} ${a.usedCouponCount}张`).join('，');
         lines.push(`第${round.roundNo}轮 ${round.roundAmount}元：${allocText}`);
       });
-      return lines.join('
-');
+      return lines.join('\n');
     }
 
     function findRecentDuplicate(amount){
