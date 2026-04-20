@@ -1,294 +1,687 @@
-const state = {
-  config: null,
-  accounts: [],
-  tasks: [],
-  stats: null,
-  preview: null,
-};
+(function () {
+  'use strict';
 
-const $ = (s) => document.querySelector(s);
-const $$ = (s) => Array.from(document.querySelectorAll(s));
+  var STORAGE_KEY = 'parking_coupon_h5_v3';
+  var VERSION = 'v2026.04.20-3';
+  var EXECUTE_COOLDOWN_MS = 5000;
+  var DUPLICATE_WARN_MS = 2 * 60 * 1000;
 
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
+  var state = loadState();
+  var editingAccountId = null;
+  var currentPlan = null;
+  var lastExecuteAt = 0;
+
+  var refs = {};
+
+  document.addEventListener('DOMContentLoaded', function () {
+    bindRefs();
+    bindEvents();
+    renderAll();
   });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || '请求失败');
-  return data.data;
-}
 
-function toast(msg) {
-  const el = $('#toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove('show'), 1800);
-}
-
-function openModal(sel) { $(sel).classList.remove('hidden'); }
-function closeModal(sel) { $(sel).classList.add('hidden'); }
-
-function money(v) { return `${v} 元`; }
-
-function renderStats() {
-  const s = state.stats;
-  $('#stats').innerHTML = s ? [
-    ['正常账号', s.active_account_count],
-    ['总券数', s.total_coupon_count],
-    ['剩余券', s.remain_coupon_count],
-    ['已抵扣', `${s.total_deduct_amount}元`],
-  ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') : '';
-}
-
-function renderAccounts() {
-  const list = $('#accountsList');
-  if (!state.accounts.length) {
-    list.innerHTML = '<div class="item">还没有账号，先新增一个。</div>';
-    return;
+  function bindRefs() {
+    refs.tabButtons = document.querySelectorAll('.tab-btn');
+    refs.panels = {
+      home: document.getElementById('tab-home'),
+      accounts: document.getElementById('tab-accounts'),
+      records: document.getElementById('tab-records'),
+      summary: document.getElementById('tab-summary')
+    };
+    refs.activeAccountCount = document.getElementById('activeAccountCount');
+    refs.totalCoupons = document.getElementById('totalCoupons');
+    refs.monthDeductAmount = document.getElementById('monthDeductAmount');
+    refs.quickAmountGrid = document.getElementById('quickAmountGrid');
+    refs.customAmount = document.getElementById('customAmount');
+    refs.selectedAmountText = document.getElementById('selectedAmountText');
+    refs.btnPreview = document.getElementById('btnPreview');
+    refs.btnExecute = document.getElementById('btnExecute');
+    refs.planEmpty = document.getElementById('planEmpty');
+    refs.planContent = document.getElementById('planContent');
+    refs.accountName = document.getElementById('accountName');
+    refs.accountCoupons = document.getElementById('accountCoupons');
+    refs.accountStatus = document.getElementById('accountStatus');
+    refs.btnResetForm = document.getElementById('btnResetForm');
+    refs.btnSaveAccount = document.getElementById('btnSaveAccount');
+    refs.accountList = document.getElementById('accountList');
+    refs.recordList = document.getElementById('recordList');
+    refs.summaryBox = document.getElementById('summaryBox');
+    refs.btnResetMonth = document.getElementById('btnResetMonth');
+    refs.btnExportData = document.getElementById('btnExportData');
   }
-  list.innerHTML = state.accounts.map(a => `
-    <div class="item">
-      <div class="item-head">
-        <div>
-          <h4>${a.owner_name}</h4>
-          <div class="meta">
-            <span>${a.login_name}</span>
-            <span>剩余 ${a.remain_coupon_count} 张</span>
-            <span>本月总额 ${a.month_quota} 张</span>
-          </div>
-        </div>
-        <span class="badge ${a.status}">${a.status === 'normal' ? '正常' : a.status === 'abnormal' ? '异常' : '停用'}</span>
-      </div>
-      <div class="meta">
-        <span>最近成功：${a.last_success_time || '暂无'}</span>
-        <span>${a.note || ''}</span>
-      </div>
-      <div class="inline-actions">
-        <button onclick="editAccount(${a.id})">编辑</button>
-        <button onclick="removeAccount(${a.id})">删除</button>
-      </div>
-    </div>
-  `).join('');
-}
 
-function renderTasks() {
-  const list = $('#tasksList');
-  if (!state.tasks.length) {
-    list.innerHTML = '<div class="item">还没有任务记录。</div>';
-    return;
+  function bindEvents() {
+    each(refs.tabButtons, function (btn) {
+      btn.addEventListener('click', function () {
+        switchTab(btn.getAttribute('data-tab'));
+      });
+    });
+
+    each(refs.quickAmountGrid.querySelectorAll('.quick-btn'), function (btn) {
+      btn.addEventListener('click', function () {
+        var amount = parseInt(btn.getAttribute('data-amount'), 10);
+        setSelectedAmount(amount, true);
+      });
+    });
+
+    refs.customAmount.addEventListener('input', function () {
+      clearQuickSelection();
+      var value = parseInt(refs.customAmount.value, 10);
+      if (!isNaN(value)) {
+        state.selectedAmount = value;
+      } else {
+        state.selectedAmount = null;
+      }
+      currentPlan = null;
+      saveState();
+      renderHome();
+    });
+
+    refs.btnPreview.addEventListener('click', function () {
+      previewPlan();
+    });
+
+    refs.btnExecute.addEventListener('click', function () {
+      executePlanWithConfirm();
+    });
+
+    refs.btnResetForm.addEventListener('click', function () {
+      resetAccountForm();
+    });
+
+    refs.btnSaveAccount.addEventListener('click', function () {
+      saveAccount();
+    });
+
+    refs.btnResetMonth.addEventListener('click', function () {
+      resetMonth();
+    });
+
+    refs.btnExportData.addEventListener('click', function () {
+      exportData();
+    });
   }
-  list.innerHTML = state.tasks.map(t => {
-    const rounds = (t.rounds || []).map(r => {
-      const detailText = (r.details || []).map(d => `${d.owner_name} ${d.used_coupon_count}张`).join('，') || '无';
-      return `<div class="preview-row">第${r.round_no}轮：${r.round_amount}元 / ${r.required_coupon_count}张 / <span class="badge ${r.status}">${statusLabel(r.status)}</span><br>${detailText}${r.error_message ? `（${r.error_message}）` : ''}</div>`;
-    }).join('');
-    return `
-      <div class="item">
-        <div class="item-head">
-          <div>
-            <h4>${money(t.input_amount)}</h4>
-            <div class="meta">
-              <span>任务 #${t.id}</span>
-              <span>需要 ${t.required_coupon_count} 张</span>
-              <span>成功 ${t.success_coupon_count} 张</span>
-              <span>${t.created_at}</span>
-            </div>
-          </div>
-          <span class="badge ${t.status}">${statusLabel(t.status)}</span>
-        </div>
-        ${t.duplicate_warning ? '<div class="preview-row">⚠️ 该任务创建时触发了 2 分钟内重复金额提醒</div>' : ''}
-        ${rounds}
-        ${t.error_message ? `<div class="preview-row">错误：${t.error_message}</div>` : ''}
-      </div>`;
-  }).join('');
-}
 
-function statusLabel(status) {
-  return {
-    success: '成功',
-    failed: '失败',
-    running: '执行中',
-    partial_success: '部分成功',
-  }[status] || status;
-}
-
-function renderPreview() {
-  const box = $('#previewBox');
-  const p = state.preview;
-  if (!p) {
-    box.classList.add('hidden');
-    box.innerHTML = '';
-    return;
-  }
-  box.classList.remove('hidden');
-  box.innerHTML = `
-    <div class="preview-row"><strong>本次金额：</strong>${money(p.amount)}</div>
-    <div class="preview-row"><strong>需要券数：</strong>${p.required_coupon_count} 张</div>
-    <div class="preview-row"><strong>拆分轮次：</strong>${p.round_amounts.join(' + ')} </div>
-    <div class="preview-row"><strong>总剩余券：</strong>${p.total_remaining} 张</div>
-    ${p.duplicate_warning ? '<div class="preview-row">⚠️ 2 分钟内有同金额成功任务，请确认不是重复扣费。</div>' : ''}
-    ${p.insufficient ? '<div class="preview-row">❌ 当前总剩余券不足，不能执行。</div>' : ''}
-    <div class="preview-row"><strong>预计账号分配：</strong></div>
-    ${(p.account_summary || []).map(x => `<div class="preview-row">${x.owner_name}：${x.coupon_count}张 / ${x.deduct_amount}元</div>`).join('') || '<div class="preview-row">无可用账号</div>'}
-    <div class="preview-row"><strong>轮次明细：</strong></div>
-    ${(p.round_plans || []).map(r => `<div class="preview-row">第${r.round_no}轮 ${r.round_amount}元：${(r.allocations || []).map(a => `${a.owner_name} ${a.coupon_count}张`).join('，') || '无'}</div>`).join('')}
-    <div class="preview-actions">
-      <button class="cancel" id="cancelPreviewBtn">取消</button>
-      <button class="confirm" id="confirmExecuteBtn" ${p.insufficient ? 'disabled' : ''}>确认并执行</button>
-    </div>
-  `;
-  $('#cancelPreviewBtn').onclick = () => { state.preview = null; renderPreview(); };
-  $('#confirmExecuteBtn').onclick = executeTask;
-}
-
-async function loadAll() {
-  const [config, accounts, stats, tasks] = await Promise.all([
-    api('/api/config'), api('/api/accounts'), api('/api/stats'), api('/api/tasks')
-  ]);
-  state.config = config;
-  state.accounts = accounts;
-  state.stats = stats;
-  state.tasks = tasks;
-  $('#targetUrlInput').value = config.target_url || '';
-  $('#executionModeSelect').value = config.execution_mode || 'mock';
-  $('#requireConfirmInput').checked = !!config.require_confirmation;
-  renderStats();
-  renderAccounts();
-  renderTasks();
-}
-
-async function createPreview() {
-  const amount = Number($('#amountInput').value || 0);
-  if (!amount || amount % 5 !== 0 || amount <= 0) {
-    toast('请输入大于 0 的 5 元整数倍');
-    return;
-  }
-  try {
-    state.preview = await api('/api/tasks/preview', { method: 'POST', body: JSON.stringify({ amount }) });
-    renderPreview();
-  } catch (e) {
-    toast(e.message);
-  }
-}
-
-async function executeTask() {
-  if (!state.preview) return;
-  try {
-    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ amount: state.preview.amount, confirmed: true }) });
-    toast('任务已执行');
-    state.preview = null;
-    renderPreview();
-    $('#amountInput').value = '';
-    await loadAll();
-  } catch (e) {
-    toast(e.message);
-  }
-}
-
-function fillAmount(amount) {
-  $('#amountInput').value = amount;
-}
-
-function openAccountModal(account) {
-  $('#accountModalTitle').textContent = account ? '编辑账号' : '新增账号';
-  $('#accountIdInput').value = account?.id || '';
-  $('#ownerNameInput').value = account?.owner_name || '';
-  $('#loginNameInput').value = account?.login_name || '';
-  $('#passwordInput').value = account?.password || '';
-  $('#monthQuotaInput').value = account?.month_quota || 30;
-  $('#remainCountInput').value = account?.remain_coupon_count ?? 30;
-  $('#statusInput').value = account?.status || 'normal';
-  $('#noteInput').value = account?.note || '';
-  openModal('#accountModal');
-}
-
-window.editAccount = (id) => {
-  const account = state.accounts.find(x => x.id === id);
-  if (account) openAccountModal(account);
-};
-
-window.removeAccount = async (id) => {
-  if (!confirm('确定删除这个账号吗？')) return;
-  try {
-    await api(`/api/accounts/${id}`, { method: 'DELETE' });
-    toast('已删除');
-    await loadAll();
-  } catch (e) {
-    toast(e.message);
-  }
-};
-
-async function saveAccount() {
-  const id = $('#accountIdInput').value;
-  const payload = {
-    owner_name: $('#ownerNameInput').value.trim(),
-    login_name: $('#loginNameInput').value.trim(),
-    password: $('#passwordInput').value,
-    month_quota: Number($('#monthQuotaInput').value || 30),
-    remain_coupon_count: Number($('#remainCountInput').value || 0),
-    status: $('#statusInput').value,
-    note: $('#noteInput').value.trim(),
-  };
-  try {
-    if (id) {
-      await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-      toast('已更新');
-    } else {
-      await api('/api/accounts', { method: 'POST', body: JSON.stringify(payload) });
-      toast('已新增');
+  function switchTab(tabName) {
+    each(refs.tabButtons, function (btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
+    });
+    for (var key in refs.panels) {
+      if (Object.prototype.hasOwnProperty.call(refs.panels, key)) {
+        refs.panels[key].classList.toggle('active', key === tabName);
+      }
     }
-    closeModal('#accountModal');
-    await loadAll();
-  } catch (e) {
-    toast(e.message);
   }
-}
 
-async function saveConfig() {
-  const payload = {
-    target_url: $('#targetUrlInput').value.trim(),
-    execution_mode: $('#executionModeSelect').value,
-    require_confirmation: $('#requireConfirmInput').checked,
-  };
-  try {
-    state.config = await api('/api/config', { method: 'POST', body: JSON.stringify(payload) });
-    closeModal('#configModal');
-    toast('配置已保存');
-  } catch (e) {
-    toast(e.message);
+  function setSelectedAmount(amount, clearCustom) {
+    state.selectedAmount = amount;
+    currentPlan = null;
+    if (clearCustom) {
+      refs.customAmount.value = '';
+    }
+    each(refs.quickAmountGrid.querySelectorAll('.quick-btn'), function (btn) {
+      btn.classList.toggle('active', parseInt(btn.getAttribute('data-amount'), 10) === amount);
+    });
+    saveState();
+    renderHome();
   }
-}
 
-async function resetMonth() {
-  if (!confirm('确定执行月度重置吗？会把所有账号的剩余券重置为月度总券数。')) return;
-  try {
-    await api('/api/admin/reset-month', { method: 'POST', body: JSON.stringify({}) });
-    toast('已重置');
-    await loadAll();
-  } catch (e) {
-    toast(e.message);
+  function clearQuickSelection() {
+    each(refs.quickAmountGrid.querySelectorAll('.quick-btn'), function (btn) {
+      btn.classList.remove('active');
+    });
   }
-}
 
-function bindEvents() {
-  $$('.quick-buttons button').forEach(btn => btn.addEventListener('click', () => fillAmount(btn.dataset.amount)));
-  $('#previewBtn').addEventListener('click', createPreview);
-  $('#addAccountBtn').addEventListener('click', () => openAccountModal());
-  $('#saveAccountBtn').addEventListener('click', saveAccount);
-  $('#openConfigBtn').addEventListener('click', () => openModal('#configModal'));
-  $('#saveConfigBtn').addEventListener('click', saveConfig);
-  $('#refreshTasksBtn').addEventListener('click', loadAll);
-  $('#resetMonthBtn').addEventListener('click', resetMonth);
-  $$('[data-close]').forEach(btn => btn.addEventListener('click', () => closeModal(btn.dataset.close)));
-}
+  function getActiveAccounts() {
+    var arr = [];
+    each(state.accounts, function (item) {
+      if (item.status === 'normal') arr.push(item);
+    });
+    return arr;
+  }
 
-(async function boot() {
-  bindEvents();
-  try {
-    await loadAll();
-  } catch (e) {
-    toast(`加载失败：${e.message}`);
+  function getTotalCoupons() {
+    var total = 0;
+    each(getActiveAccounts(), function (item) {
+      total += toInt(item.remaining, 0);
+    });
+    return total;
+  }
+
+  function getMonthDeductAmount() {
+    var total = 0;
+    each(state.records, function (item) {
+      if (item.status === 'success' || item.status === 'partial') {
+        total += toInt(item.successAmount, 0);
+      }
+    });
+    return total;
+  }
+
+  function previewPlan() {
+    var amount = getSelectedAmount();
+    if (!validateAmount(amount, true)) return null;
+    var plan = buildPlan(amount);
+    currentPlan = plan;
+    renderPlan(plan);
+    return plan;
+  }
+
+  function executePlanWithConfirm() {
+    var now = Date.now();
+    if (now - lastExecuteAt < EXECUTE_COOLDOWN_MS) {
+      alert('请不要连续点击，稍等几秒再试。');
+      return;
+    }
+
+    var plan = currentPlan || previewPlan();
+    if (!plan) return;
+
+    if (!plan.ok) {
+      alert(plan.message || '当前方案不可执行。');
+      return;
+    }
+
+    var duplicate = findRecentDuplicate(plan.amount);
+    if (duplicate) {
+      var duplicateText = '你在 2 分钟内已经成功执行过一笔 ' + plan.amount + ' 元扣费，\n时间：' + formatTime(duplicate.createdAt) + '\n是否仍要继续？';
+      if (!window.confirm(duplicateText)) {
+        return;
+      }
+    }
+
+    var confirmText = buildConfirmText(plan);
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    lastExecuteAt = now;
+    doExecute(plan);
+  }
+
+  function doExecute(plan) {
+    var snapshot = deepClone(state.accounts);
+    var successRounds = [];
+    var failedRounds = [];
+    var successAmount = 0;
+    var successCoupons = 0;
+
+    each(plan.rounds, function (round) {
+      if (round.ok) {
+        applyRound(round);
+        successRounds.push(round);
+        successAmount += round.amount;
+        successCoupons += round.requiredCoupons;
+      } else {
+        failedRounds.push(round);
+      }
+    });
+
+    var record = {
+      id: createId('rec'),
+      createdAt: Date.now(),
+      amount: plan.amount,
+      requiredCoupons: plan.requiredCoupons,
+      roundCount: plan.rounds.length,
+      rounds: plan.rounds,
+      successAmount: successAmount,
+      successCoupons: successCoupons,
+      status: failedRounds.length === 0 ? 'success' : (successRounds.length > 0 ? 'partial' : 'failed'),
+      planText: buildPlanText(plan)
+    };
+
+    state.records.unshift(record);
+    saveState();
+    currentPlan = null;
+    renderAll();
+
+    if (record.status === 'success') {
+      alert('执行成功。\n本次金额：' + record.amount + ' 元\n成功抵扣：' + record.successAmount + ' 元');
+    } else if (record.status === 'partial') {
+      alert('部分成功。\n本次金额：' + record.amount + ' 元\n成功抵扣：' + record.successAmount + ' 元\n其余部分未完成。');
+    } else {
+      state.accounts = snapshot;
+      saveState();
+      renderAll();
+      alert('执行失败，本次未扣费。');
+    }
+  }
+
+  function applyRound(round) {
+    each(round.allocations, function (alloc) {
+      var acc = findAccountById(alloc.accountId);
+      if (acc) {
+        acc.remaining = toInt(acc.remaining, 0) - alloc.coupons;
+        if (acc.remaining < 0) acc.remaining = 0;
+        acc.used = toInt(acc.used, 0) + alloc.coupons;
+        acc.lastSuccessAt = Date.now();
+      }
+    });
+  }
+
+  function buildPlan(amount) {
+    var plan = {
+      ok: true,
+      amount: amount,
+      requiredCoupons: amount / 5,
+      rounds: [],
+      message: ''
+    };
+
+    var activeAccounts = sortAccountsForAllocation(getActiveAccounts());
+    var totalCoupons = getTotalCoupons();
+    if (totalCoupons < plan.requiredCoupons) {
+      plan.ok = false;
+      plan.message = '当前总剩余券不足，还差 ' + (plan.requiredCoupons - totalCoupons) + ' 张。';
+      return plan;
+    }
+
+    var remainAmount = amount;
+    var shadow = deepClone(activeAccounts);
+    var roundNo = 0;
+
+    while (remainAmount > 0) {
+      roundNo += 1;
+      var roundAmount = remainAmount >= 25 ? 25 : remainAmount;
+      var roundCoupons = roundAmount / 5;
+      var alloc = allocateCoupons(shadow, roundCoupons);
+      var round = {
+        roundNo: roundNo,
+        amount: roundAmount,
+        requiredCoupons: roundCoupons,
+        allocations: alloc.allocations,
+        ok: alloc.ok,
+        message: alloc.message || ''
+      };
+      plan.rounds.push(round);
+      if (!alloc.ok) {
+        plan.ok = false;
+      }
+      remainAmount -= roundAmount;
+    }
+
+    return plan;
+  }
+
+  function allocateCoupons(accounts, needCoupons) {
+    var remainingNeed = needCoupons;
+    var allocations = [];
+    var sorted = sortAccountsForAllocation(accounts);
+
+    for (var i = 0; i < sorted.length; i += 1) {
+      if (remainingNeed <= 0) break;
+      var acc = sorted[i];
+      var available = toInt(acc.remaining, 0);
+      if (available <= 0) continue;
+      var useCoupons = available >= remainingNeed ? remainingNeed : available;
+      acc.remaining = available - useCoupons;
+      allocations.push({
+        accountId: acc.id,
+        name: acc.name,
+        coupons: useCoupons,
+        amount: useCoupons * 5
+      });
+      remainingNeed -= useCoupons;
+    }
+
+    return {
+      ok: remainingNeed === 0,
+      message: remainingNeed === 0 ? '' : '券数不足',
+      allocations: allocations
+    };
+  }
+
+  function sortAccountsForAllocation(accounts) {
+    var arr = deepClone(accounts);
+    arr.sort(function (a, b) {
+      var diff = toInt(b.remaining, 0) - toInt(a.remaining, 0);
+      if (diff !== 0) return diff;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    return arr;
+  }
+
+  function renderAll() {
+    renderHome();
+    renderAccounts();
+    renderRecords();
+    renderSummary();
+  }
+
+  function renderHome() {
+    refs.activeAccountCount.textContent = String(getActiveAccounts().length);
+    refs.totalCoupons.textContent = String(getTotalCoupons());
+    refs.monthDeductAmount.textContent = getMonthDeductAmount() + '元';
+    var amount = getSelectedAmount();
+    refs.selectedAmountText.textContent = amount ? ('当前金额：' + amount + ' 元') : '当前未选择金额';
+    if (!currentPlan) {
+      refs.planEmpty.classList.remove('hidden');
+      refs.planContent.classList.add('hidden');
+      refs.planContent.innerHTML = '';
+    }
+  }
+
+  function renderPlan(plan) {
+    refs.planEmpty.classList.add('hidden');
+    refs.planContent.classList.remove('hidden');
+    if (!plan.ok && (!plan.rounds || plan.rounds.length === 0)) {
+      refs.planContent.innerHTML = '<div class="plan-box"><div class="plan-line">' + escapeHtml(plan.message) + '</div></div>';
+      return;
+    }
+
+    var html = '';
+    html += '<div class="plan-box">';
+    html += '<div class="plan-line"><strong>总金额：</strong>' + plan.amount + ' 元</div>';
+    html += '<div class="plan-line"><strong>总券数：</strong>' + plan.requiredCoupons + ' 张</div>';
+    html += '<div class="plan-line"><strong>执行轮数：</strong>' + plan.rounds.length + ' 轮</div>';
+
+    each(plan.rounds, function (round) {
+      html += '<div class="plan-detail">';
+      html += '<div class="plan-line"><strong>第 ' + round.roundNo + ' 轮：</strong>' + round.amount + ' 元，需 ' + round.requiredCoupons + ' 张</div>';
+      if (round.allocations.length === 0) {
+        html += '<div class="plan-line">无可用账号</div>';
+      } else {
+        each(round.allocations, function (alloc) {
+          html += '<div class="plan-line">' + escapeHtml(alloc.name) + '：' + alloc.coupons + ' 张（' + alloc.amount + ' 元）</div>';
+        });
+      }
+      if (!round.ok) {
+        html += '<div class="plan-line" style="color:#e5484d;">本轮不可执行：' + escapeHtml(round.message || '券不足') + '</div>';
+      }
+      html += '</div>';
+    });
+
+    html += '</div>';
+    refs.planContent.innerHTML = html;
+  }
+
+  function renderAccounts() {
+    if (!state.accounts.length) {
+      refs.accountList.innerHTML = '<div class="empty">还没有账号，先新增一个测试账号。</div>';
+      return;
+    }
+
+    var html = '';
+    each(state.accounts, function (acc) {
+      html += '<div class="list-item">';
+      html += '<div class="item-top"><div class="item-title">' + escapeHtml(acc.name) + '</div>';
+      html += '<div class="badge ' + (acc.status === 'normal' ? 'ok' : 'gray') + '">' + (acc.status === 'normal' ? '正常' : '停用') + '</div></div>';
+      html += '<div class="meta">剩余券数：' + toInt(acc.remaining, 0) + ' 张<br>本月已用：' + toInt(acc.used, 0) + ' 张' + (acc.lastSuccessAt ? '<br>最近成功：' + formatTime(acc.lastSuccessAt) : '') + '</div>';
+      html += '<div class="inline-actions">';
+      html += '<button class="small-btn" data-action="edit" data-id="' + acc.id + '">编辑</button>';
+      html += '<button class="small-btn" data-action="toggle" data-id="' + acc.id + '">' + (acc.status === 'normal' ? '停用' : '启用') + '</button>';
+      html += '<button class="small-btn danger" data-action="delete" data-id="' + acc.id + '">删除</button>';
+      html += '</div></div>';
+    });
+    refs.accountList.innerHTML = html;
+
+    each(refs.accountList.querySelectorAll('button[data-action]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-action');
+        var id = btn.getAttribute('data-id');
+        if (action === 'edit') editAccount(id);
+        if (action === 'toggle') toggleAccount(id);
+        if (action === 'delete') deleteAccount(id);
+      });
+    });
+  }
+
+  function renderRecords() {
+    if (!state.records.length) {
+      refs.recordList.innerHTML = '<div class="empty">还没有扣费记录。</div>';
+      return;
+    }
+    var html = '';
+    each(state.records, function (rec) {
+      var badgeCls = rec.status === 'success' ? 'ok' : (rec.status === 'partial' ? '' : 'gray');
+      var badgeText = rec.status === 'success' ? '成功' : (rec.status === 'partial' ? '部分成功' : '失败');
+      html += '<div class="list-item">';
+      html += '<div class="item-top"><div class="item-title">' + rec.amount + ' 元</div><div class="badge ' + badgeCls + '">' + badgeText + '</div></div>';
+      html += '<div class="meta">时间：' + formatTime(rec.createdAt) + '<br>需券：' + rec.requiredCoupons + ' 张<br>成功抵扣：' + rec.successAmount + ' 元<br>轮次：' + rec.roundCount + '</div>';
+      html += '<div class="meta">' + escapeHtml(rec.planText).replace(/\n/g, '<br>') + '</div>';
+      html += '</div>';
+    });
+    refs.recordList.innerHTML = html;
+  }
+
+  function renderSummary() {
+    var activeCount = getActiveAccounts().length;
+    var totalCoupons = 0;
+    var usedCoupons = 0;
+    each(state.accounts, function (acc) {
+      totalCoupons += toInt(acc.remaining, 0) + toInt(acc.used, 0);
+      usedCoupons += toInt(acc.used, 0);
+    });
+    var remainCoupons = getTotalCoupons();
+    var totalDeduct = getMonthDeductAmount();
+    var html = '';
+    html += '<div class="plan-box">';
+    html += '<div class="plan-line"><strong>版本：</strong>' + VERSION + '</div>';
+    html += '<div class="plan-line"><strong>当前正常账号数：</strong>' + activeCount + '</div>';
+    html += '<div class="plan-line"><strong>本月总券数：</strong>' + totalCoupons + ' 张</div>';
+    html += '<div class="plan-line"><strong>本月已用券数：</strong>' + usedCoupons + ' 张</div>';
+    html += '<div class="plan-line"><strong>本月剩余券数：</strong>' + remainCoupons + ' 张</div>';
+    html += '<div class="plan-line"><strong>本月总抵扣金额：</strong>' + totalDeduct + ' 元</div>';
+    html += '<div class="plan-line"><strong>本月扣费笔数：</strong>' + state.records.length + ' 笔</div>';
+    html += '</div>';
+    refs.summaryBox.innerHTML = html;
+  }
+
+  function saveAccount() {
+    var name = trim(refs.accountName.value);
+    var coupons = toInt(refs.accountCoupons.value, 30);
+    var status = refs.accountStatus.value || 'normal';
+
+    if (!name) {
+      alert('请填写账号备注名。');
+      return;
+    }
+    if (coupons < 0) {
+      alert('剩余券数不能小于 0。');
+      return;
+    }
+
+    if (editingAccountId) {
+      var acc = findAccountById(editingAccountId);
+      if (acc) {
+        acc.name = name;
+        acc.remaining = coupons;
+        acc.status = status;
+      }
+    } else {
+      state.accounts.push({
+        id: createId('acc'),
+        name: name,
+        remaining: coupons,
+        used: 0,
+        status: status,
+        createdAt: Date.now(),
+        lastSuccessAt: null
+      });
+    }
+    saveState();
+    resetAccountForm();
+    renderAll();
+    switchTab('accounts');
+  }
+
+  function editAccount(id) {
+    var acc = findAccountById(id);
+    if (!acc) return;
+    editingAccountId = id;
+    refs.accountName.value = acc.name;
+    refs.accountCoupons.value = acc.remaining;
+    refs.accountStatus.value = acc.status;
+    switchTab('accounts');
+  }
+
+  function toggleAccount(id) {
+    var acc = findAccountById(id);
+    if (!acc) return;
+    acc.status = acc.status === 'normal' ? 'disabled' : 'normal';
+    saveState();
+    renderAll();
+  }
+
+  function deleteAccount(id) {
+    if (!window.confirm('确认删除这个账号吗？')) return;
+    state.accounts = state.accounts.filter(function (item) { return item.id !== id; });
+    if (editingAccountId === id) editingAccountId = null;
+    saveState();
+    resetAccountForm();
+    renderAll();
+  }
+
+  function resetAccountForm() {
+    editingAccountId = null;
+    refs.accountName.value = '';
+    refs.accountCoupons.value = '';
+    refs.accountStatus.value = 'normal';
+  }
+
+  function resetMonth() {
+    if (!window.confirm('确认执行月度清零吗？这会把当前剩余券视为失效，并清空本月已用数和本月记录。')) return;
+    each(state.accounts, function (acc) {
+      acc.used = 0;
+      acc.remaining = 30;
+      acc.lastSuccessAt = null;
+    });
+    state.records = [];
+    state.selectedAmount = null;
+    currentPlan = null;
+    saveState();
+    renderAll();
+    alert('月度数据已重置。');
+  }
+
+  function exportData() {
+    var data = JSON.stringify(state, null, 2);
+    var html = '<pre class="export-box">' + escapeHtml(data) + '</pre>';
+    refs.summaryBox.insertAdjacentHTML('beforeend', html);
+    setTimeout(function () {
+      var box = refs.summaryBox.querySelector('.export-box');
+      if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
+
+  function buildConfirmText(plan) {
+    var text = '本次金额：' + plan.amount + ' 元\n';
+    text += '需要券数：' + plan.requiredCoupons + ' 张\n';
+    text += '执行轮数：' + plan.rounds.length + ' 轮\n';
+    each(plan.rounds, function (round) {
+      text += '\n第 ' + round.roundNo + ' 轮：' + round.amount + ' 元\n';
+      each(round.allocations, function (alloc) {
+        text += alloc.name + '：' + alloc.coupons + ' 张\n';
+      });
+    });
+    text += '\n确认后才会执行。';
+    return text;
+  }
+
+  function buildPlanText(plan) {
+    var lines = [];
+    lines.push('总金额：' + plan.amount + ' 元');
+    lines.push('总券数：' + plan.requiredCoupons + ' 张');
+    each(plan.rounds, function (round) {
+      var arr = [];
+      each(round.allocations, function (alloc) {
+        arr.push(alloc.name + ' ' + alloc.coupons + '张');
+      });
+      lines.push('第' + round.roundNo + '轮：' + round.amount + '元；' + arr.join('，'));
+    });
+    return lines.join('\n');
+  }
+
+  function findRecentDuplicate(amount) {
+    var now = Date.now();
+    for (var i = 0; i < state.records.length; i += 1) {
+      var rec = state.records[i];
+      if (rec.status !== 'success' && rec.status !== 'partial') continue;
+      if (rec.amount === amount && now - rec.createdAt <= DUPLICATE_WARN_MS) {
+        return rec;
+      }
+    }
+    return null;
+  }
+
+  function getSelectedAmount() {
+    var amount = state.selectedAmount;
+    return toInt(amount, 0);
+  }
+
+  function validateAmount(amount, needAlert) {
+    if (!amount || amount <= 0) {
+      if (needAlert) alert('请先选择或输入金额。');
+      return false;
+    }
+    if (amount % 5 !== 0) {
+      if (needAlert) alert('金额必须是 5 元的整数倍。');
+      return false;
+    }
+    return true;
+  }
+
+  function loadState() {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return createDefaultState();
+    try {
+      var data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') return createDefaultState();
+      if (!Array.isArray(data.accounts)) data.accounts = [];
+      if (!Array.isArray(data.records)) data.records = [];
+      if (typeof data.selectedAmount === 'undefined') data.selectedAmount = null;
+      return data;
+    } catch (e) {
+      return createDefaultState();
+    }
+  }
+
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function createDefaultState() {
+    return {
+      accounts: [
+        { id: createId('acc'), name: '测试账号A', remaining: 30, used: 0, status: 'normal', createdAt: Date.now(), lastSuccessAt: null },
+        { id: createId('acc'), name: '测试账号B', remaining: 20, used: 0, status: 'normal', createdAt: Date.now(), lastSuccessAt: null }
+      ],
+      records: [],
+      selectedAmount: null
+    };
+  }
+
+  function findAccountById(id) {
+    for (var i = 0; i < state.accounts.length; i += 1) {
+      if (state.accounts[i].id === id) return state.accounts[i];
+    }
+    return null;
+  }
+
+  function formatTime(ts) {
+    var d = new Date(ts);
+    var y = d.getFullYear();
+    var m = pad(d.getMonth() + 1);
+    var day = pad(d.getDate());
+    var h = pad(d.getHours());
+    var min = pad(d.getMinutes());
+    return y + '-' + m + '-' + day + ' ' + h + ':' + min;
+  }
+
+  function pad(n) { return n < 10 ? '0' + n : String(n); }
+  function toInt(val, fallback) {
+    var n = parseInt(val, 10);
+    return isNaN(n) ? fallback : n;
+  }
+  function trim(str) { return (str || '').replace(/^\s+|\s+$/g, ''); }
+  function createId(prefix) { return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+  function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+  function each(list, fn) { Array.prototype.forEach.call(list || [], fn); }
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 })();
